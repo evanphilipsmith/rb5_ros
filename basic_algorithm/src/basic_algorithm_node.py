@@ -12,16 +12,18 @@ WHEELBASE = 0.111125  # dist between centers of front & rear wheels in meters
 TRACK = 0.136525      # dist between centers of front wheels in meters
 WHEEL_RADIUS = 0.03   # meters
 
-LIN_VEL = 0.3
-ANG_VEL = 0.1
-CFG_TIME_TO_ROTATE_90_DEG = 2.0
-CFG_TIME_TO_TRAVERSE_1_METER = 4.0
+LIN_VEL = 10.0  # meters / sec
+ANG_VEL = 1.2  # radians / sec
+CFG_TIME_TO_ROTATE_90_DEG = 1.25  # seconds
+CFG_90_DEGREES = 1.57  # radians
+CFG_TIME_TO_TRAVERSE_1_METER = 4.0  # seconds
 
 class BasicAlgorithmNode:
     def __init__(self, dryrun=True):
         self.pub_joy = rospy.Publisher("/joy", Joy, queue_size=1)
         self.waypoints = []
-        self.robot = MegapiController()
+        self.robot = MegapiController(dryrun=dryrun)
+        time.sleep(1)  # Give the MBot some time to initialize
         self.dryrun = dryrun
 
     def read_waypoints_csv_file(self, filename):
@@ -81,21 +83,17 @@ class BasicAlgorithmNode:
     def turn(self, angle):
         # type: (float) -> None
         print('Turn {} radians'.format(angle))
-        if self.dryrun:
-            return
-        turn_clockwise = 1 if angle > 0 else -1
+        turn_clockwise = -1 if angle > 0 else 1
         motors = self.kinematic_model(0, 0, ANG_VEL * turn_clockwise)
         self.robot.setMotors(*motors)
         # Normalize and multiply by time it takes to rotate 90 degrees
-        time.sleep(abs(angle) / 1.57 * CFG_TIME_TO_ROTATE_90_DEG)
+        time.sleep(abs(angle) / CFG_90_DEGREES * CFG_TIME_TO_ROTATE_90_DEG)
         self.robot.stop()
     
     def driveStraight(self, distance):
         # type: (float) -> None
         drive_direction = 1 if distance > 0 else -1
         print('Drive {} meters'.format(distance))
-        if self.dryrun:
-            return
         motors = self.kinematic_model(0, LIN_VEL * drive_direction, 0)
         self.robot.setMotors(*motors)
         time.sleep(abs(distance) * CFG_TIME_TO_TRAVERSE_1_METER)
@@ -116,14 +114,31 @@ class BasicAlgorithmNode:
             [1, 1, -GEOM_COEFFICIENT],
             [1, -1, GEOM_COEFFICIENT],
         ]) * 1 / WHEEL_RADIUS
-        inputs = np.array([linear_vel_x, linear_vel_y, angular_vel])
+        inputs = np.array([angular_vel, linear_vel_x, linear_vel_y])
         wheel_velocities = np.dot(jacobian, inputs)
         return tuple(wheel_velocities.flatten())
+    
+    def sanity_check(self):
+        SPEED = 40
+        self.robot.setMotors(-SPEED, SPEED, -SPEED, SPEED)  # straight
+        time.sleep(1)
+        self.robot.setMotors(SPEED, SPEED, -SPEED, -SPEED)  # slide
+        time.sleep(1)
+        self.robot.setMotors(SPEED, SPEED, SPEED, SPEED)    # rotate
+        time.sleep(1)
+        self.robot.stop()
+
+    def calibrate(self):
+        self.driveStraight(1.0)
+        time.sleep(2)
+        self.turn(CFG_90_DEGREES)
 
 
 if __name__ == "__main__":
-    basic_algorithm_node = BasicAlgorithmNode()
-    waypoint_filename = os.path.join(os.path.dirname(__file__), 'waypoints.txt')
+    basic_algorithm_node = BasicAlgorithmNode(dryrun=False)
     rospy.init_node("basic_algorithm")
+    # basic_algorithm_node.sanity_check()
+    # basic_algorithm_node.calibrate()
+    waypoint_filename = os.path.join(os.path.dirname(__file__), 'waypoints.txt')
     basic_algorithm_node.read_waypoints_csv_file(waypoint_filename)
     basic_algorithm_node.run()

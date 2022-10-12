@@ -8,9 +8,10 @@ MFL = 11    # port for motor front left
 
 
 class MegapiController:
-    def __init__(self, port='/dev/ttyUSB0', verbose=True):
+    def __init__(self, port='/dev/ttyUSB0', verbose=True, dryrun=False):
         self.port = port
         self.verbose = verbose
+        self.dryrun = dryrun
         if verbose:
             print("Communication Port: {}".format(port))
             print("Motor ports:\n\tFR: {}\tBL: {}\t BR: {}\tFL: {}".format(MFR, MBL, MBR, MFL))
@@ -28,6 +29,8 @@ class MegapiController:
                 int(round(front_right, 0)),
                 int(round(back_left, 0)),
                 int(round(back_right, 0))))
+        if self.dryrun:
+            return
         self.bot.motorRun(self.mfl, front_left)
         self.bot.motorRun(self.mfr, front_right)
         self.bot.motorRun(self.mbl, back_left)
