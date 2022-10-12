@@ -54,6 +54,7 @@
   <exec_depend>rospy</exec_depend>
   <depend>std_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>serial</depend>
 
 
   <!-- The export tag contains other, unspecified, tags -->
