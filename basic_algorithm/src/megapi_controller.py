@@ -13,7 +13,7 @@ class MegapiController:
         self.verbose = verbose
         if verbose:
             print("Communication Port: {}".format(port))
-            print("Motor ports:\n\tFR: {}\BL: {}\t BR: {}\tFL: {}".format(MFR, MBL, MBR, MFL))
+            print("Motor ports:\n\tFR: {}\tBL: {}\t BR: {}\tFL: {}".format(MFR, MBL, MBR, MFL))
         self.bot = MegaPi()
         self.bot.start(port=port)
         self.mfr = MFR  # front right motor port

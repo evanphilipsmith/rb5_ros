@@ -18,10 +18,11 @@ CFG_TIME_TO_ROTATE_90_DEG = 2.0
 CFG_TIME_TO_TRAVERSE_1_METER = 4.0
 
 class BasicAlgorithmNode:
-    def __init__(self):
+    def __init__(self, dryrun=True):
         self.pub_joy = rospy.Publisher("/joy", Joy, queue_size=1)
         self.waypoints = []
         self.robot = MegapiController()
+        self.dryrun = dryrun
 
     def read_waypoints_csv_file(self, filename):
         # type: (str) -> None
@@ -52,45 +53,53 @@ class BasicAlgorithmNode:
         while self.waypoints:
             goal = self.waypoints.pop(0)
             print('Current pose: {}\tGoal: {}'.format(current_pose, goal))
-
             distance = round(math.sqrt((goal[0]-current_pose[0])**2 + (goal[1]-current_pose[1])**2), 2)
             angle_from_point = round(math.atan2(goal[1]-current_pose[1], goal[0]-current_pose[0]), 2)
             goal_angle = current_pose[2] - angle_from_point
-            drive_direction = 1
             if abs(goal_angle) == round(math.pi, 2):
                 print('Skipping preturn, going in reverse')
                 goal_angle = 0
-                drive_direction = -1
+                distance *= -1
             final_angle = -(goal[2] - (current_pose[2] - goal_angle))
             if abs(final_angle) == round(math.pi, 2):
                 print('Flipping goal angle, going in reverse')
                 goal_angle *= -1
-                drive_direction = -1
+                distance *= -1
                 final_angle = -(goal[2] - (current_pose[2] - goal_angle))
-            
+
             # Drive
             if abs(goal_angle) > 0.02:  # Skip if turn is ~1 degree or less
-                print('Turn {} radians'.format(goal_angle))
-                turn_clockwise = 1 if goal_angle > 0 else -1
-                motors = self.kinematic_model(0, 0, ANG_VEL * turn_clockwise)
-                self.robot.setMotors(*motors)
-                # Normalize and multiply by time it takes to rotate 90 degrees
-                time.sleep(goal_angle / 1.57 * CFG_TIME_TO_ROTATE_90_DEG)
-            print('Drive {} meters{}'.format(distance, ' in reverse' if drive_direction < 0 else ''))
-            motors = self.kinematic_model(0, LIN_VEL * drive_direction, 0)
-            time.sleep(distance * CFG_TIME_TO_TRAVERSE_1_METER)
-
+                self.turn(goal_angle)
+            self.driveStraight(distance)
             if abs(final_angle) > 0.02:  # Skip if turn is ~1 degree or less
-                print('Turn {} radians'.format(final_angle))
-                turn_clockwise = 1 if final_angle > 0 else -1
-                motors = self.kinematic_model(0, 0, ANG_VEL * turn_clockwise)
-                self.robot.setMotors(*motors)
-                time.sleep(final_angle / 1.57 * CFG_TIME_TO_ROTATE_90_DEG)
-            self.robot.stop()
+                self.turn(final_angle)
             current_pose = goal
-            print('-'*15)
 
+            print('-'*15)
             time.sleep(1)
+
+    def turn(self, angle):
+        # type: (float) -> None
+        print('Turn {} radians'.format(angle))
+        if self.dryrun:
+            return
+        turn_clockwise = 1 if angle > 0 else -1
+        motors = self.kinematic_model(0, 0, ANG_VEL * turn_clockwise)
+        self.robot.setMotors(*motors)
+        # Normalize and multiply by time it takes to rotate 90 degrees
+        time.sleep(abs(angle) / 1.57 * CFG_TIME_TO_ROTATE_90_DEG)
+        self.robot.stop()
+    
+    def driveStraight(self, distance):
+        # type: (float) -> None
+        drive_direction = 1 if distance > 0 else -1
+        print('Drive {} meters'.format(distance))
+        if self.dryrun:
+            return
+        motors = self.kinematic_model(0, LIN_VEL * drive_direction, 0)
+        self.robot.setMotors(*motors)
+        time.sleep(abs(distance) * CFG_TIME_TO_TRAVERSE_1_METER)
+        self.robot.stop()
 
     def kinematic_model(self, linear_vel_x, linear_vel_y, angular_vel):
         # type: (float, float, float) -> tuple
