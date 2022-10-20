@@ -20,14 +20,10 @@ AprilDetection det;
 
 
 double distortion_coeff[] = {
-  -0.004690, 
-  -0.010306, 
-  -0.000044, 
-  0.000303, 
-  0.000000};
-double intrinsics[] = {671.42099,    0.     ,  969.0114,
-                       0.     ,  670.67143,  555.81758,
-                       0.     ,    0.     ,    1.};
+  -0.002282, -0.010910, -0.000082, -0.002964, 0.000000};
+double intrinsics[] = {698.47792,   0.     , 939.03308,
+           0.     , 698.77035, 512.20652,
+           0.     ,   0.     ,   1.     };
 
 const cv::Mat d(cv::Size(1, 5), CV_64FC1, distortion_coeff);
 const cv::Mat K(cv::Size(3, 3), CV_64FC1, intrinsics);
@@ -47,6 +43,7 @@ void publishTransforms(vector<apriltag_pose_t> poses, vector<int> ids, std_msgs:
   static tf::TransformBroadcaster br;
   geometry_msgs::PoseArray pose_array_msg;
   april_detection::AprilTagDetectionArray apriltag_detection_array_msg;
+  header.frame_id = "camera";
   pose_array_msg.header = header;
   apriltag_detection_array_msg.header = header;
 
@@ -121,7 +118,7 @@ int main(int argc, char *argv[]){
   
   // Set info for pose estimation
   // details from: https://github.com/AprilRobotics/apriltag/wiki/AprilTag-User-Guide#pose-estimation
-  double tagSize = 0.159;
+  double tagSize = 0.098425;
   det.setInfo(tagSize, intrinsics[0], intrinsics[4], intrinsics[2], intrinsics[5]);
   
   ros::spin();
