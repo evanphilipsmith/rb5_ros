@@ -1,0 +1,4 @@
+<launch>
+  <node pkg="rb5_control" type="mpi_twist_control_node.py" name="mpi_twist_control_node" output="screen"/>
+  <node pkg="rb5_control" type="open_loop.py" name="open_loop_node" output="screen"/>
+</launch>
