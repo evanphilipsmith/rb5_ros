@@ -59,8 +59,8 @@ void publishTransforms(vector<apriltag_pose_t> poses, vector<int> ids, std_msgs:
 
     // translation
     tf.setOrigin(tf::Vector3(poses[i].t->data[0],
-                             poses[i].t->data[1],
-                             poses[i].t->data[2]));
+                             poses[i].t->data[2],
+                             -1.0 * poses[i].t->data[1]));
     // orientation - SO(3)
     so3_mat.setValue(poses[i].R->data[0], poses[i].R->data[1], poses[i].R->data[2],
                      poses[i].R->data[3], poses[i].R->data[4], poses[i].R->data[5], 
@@ -69,8 +69,8 @@ void publishTransforms(vector<apriltag_pose_t> poses, vector<int> ids, std_msgs:
     double roll, pitch, yaw; 
 
     // orientation - q
-    so3_mat.getRPY(roll, pitch, yaw); // so3 to RPY
-    q.setRPY(roll, pitch, yaw);
+    so3_mat.getRPY(roll, yaw, pitch); // so3 to RPY
+    q.setRPY(roll, pitch, -yaw);
 
     tf.setRotation(q);
     string marker_name = "marker_" + to_string(ids[i]);
