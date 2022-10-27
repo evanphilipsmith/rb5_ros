@@ -113,7 +113,7 @@ def correct_pose(tfBuffer, tag_id, tag_pose):
         robot_pose_x = tag_pose[0] - (dist_to_tag * np.cos(angle))
         robot_pose_y = tag_pose[1] + (dist_to_tag * np.sin(angle))
         robot_yaw = tag_pose[2] - theta
-        return np.array(robot_pose_x, robot_pose_y, robot_yaw)
+        return np.array([robot_pose_x, robot_pose_y, robot_yaw])
     except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
         return None
 
@@ -139,11 +139,22 @@ if __name__ == "__main__":
     listener = tf2_ros.TransformListener(tfBuffer)
 
     waypoints = (
-        # robot pose                # tag id    # april tag pose
-        np.array([0.0, 0.0, 0.0]),    "marker_0", np.array([1.5, 0.0, 0.0]),
-        np.array([1.0, 0.0, 0.0]),    "marker_0", np.array([1.5, 0.0, 0.0]),
-        np.array([1.0, 2.0, np.pi]),  "marker_1", np.array([0.5, 2.0, np.pi]),
-        np.array([0.0, 0.0, 0.0]),    "marker_0", np.array([1.5, 0.0, 0.0]),
+        np.array([0.0, 0.0, 0.0]),
+        np.array([1.0, 0.0, 0.0]),
+        np.array([1.0, 2.0, np.pi]),
+        np.array([0.0, 0.0, 0.0]),
+    )
+    tag_ids = (
+        "marker_0",
+        "marker_0",
+        "marker_1",
+        "marker_0",
+    )
+    tag_poses = (
+        np.array([1.5, 0.0, 0.0]),
+        np.array([1.5, 0.0, 0.0]),
+        np.array([0.5, 2.0, np.pi]),
+        np.array([1.5, 0.0, 0.0]),
     )
 
     # init pid controller
@@ -156,7 +167,10 @@ if __name__ == "__main__":
     # in this loop we will go through each way point.
     # once error between the current state and the current way point is small enough, 
     # the current way point will be updated with a new point.
-    for (wp, tag_id, tag_pose) in waypoints:
+    for i in range(len(waypoints)):
+        wp = waypoints[i]
+        tag_id = tag_ids[i]
+        tag_pose = tag_poses[i]
         print("Move to waypoint {}".format(wp))
         # set wp as the target point
         pid.setTarget(wp)
@@ -179,6 +193,7 @@ if __name__ == "__main__":
         updated_pose = None
         while updated_pose is None:
             print("Looking for {}...".format(tag_id))
+            time.sleep(0.05)
             updated_pose = correct_pose(tfBuffer, tag_id, tag_pose)
         while np.linalg.norm(pid.getError(updated_pose, wp)) > 0.05:
             pub_pose.publish(genPoseMsg(x=updated_pose[0], y=updated_pose[1], yaw=updated_pose[2]))
