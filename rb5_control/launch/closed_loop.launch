@@ -1,0 +1,10 @@
+<launch>
+    <node pkg="april_detection" type="april_detection_node" name="april_detection_node" output="screen"/>
+    <node pkg="rb5_control" type="robot_tf2_broadcaster.py" name="robot_broadcaster" output="screen"/>
+    <node pkg="rb5_control" type="camera_tf2_fixed_broadcaster.py" name="camera_broadcaster_fixed" output="screen"/>
+    <node pkg="tf2_ros" type="static_transform_publisher" name="marker_0_broadcaster" args="1.5 0 0 3.14 0 0 world marker_0"/>
+    <node pkg="tf2_ros" type="static_transform_publisher" name="marker_1_broadcaster" args="0.5 2 0 0 0 0 world marker_1"/>
+    <!-- <node pkg="rb5_control" type="marker_tf2_listener.py" name="marker_tf2_listener" output="screen">
+        <param name="marker" type="string" value="marker_0"/>
+    </node> -->
+</launch>

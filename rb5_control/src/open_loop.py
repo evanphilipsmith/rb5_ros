@@ -4,6 +4,7 @@ import rospy
 from geometry_msgs.msg import Twist, Pose
 import numpy as np
 import tf_conversions
+import tf2_ros
 
 """
 The class of the pid controller.
@@ -102,20 +103,48 @@ def coord(twist, current_state):
                   [0.0,0.0,1.0]])
     return np.dot(J, twist)
 
+def correct_pose(tfBuffer, tag_id, tag_pose):
+    try:
+        t = tfBuffer.lookup_transform('robot', tag_id, rospy.Time())
+        x, y, theta = unpack_transform(t)
+        dist_to_tag = np.sqrt(x**2 + y**2)
+        angle_offset = np.arctan(y/x)
+        angle = theta - angle_offset
+        robot_pose_x = tag_pose[0] - (dist_to_tag * np.cos(angle))
+        robot_pose_y = tag_pose[1] + (dist_to_tag * np.sin(angle))
+        robot_yaw = tag_pose[2] - theta
+        return np.array(robot_pose_x, robot_pose_y, robot_yaw)
+    except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+        return None
+
+def unpack_transform(t):
+    x = t.transform.translation.x
+    y = t.transform.translation.y
+    quaternion = (
+        t.transform.rotation.x,
+        t.transform.rotation.y,
+        t.transform.rotation.z,
+        t.transform.rotation.w,
+    )
+    euler = tf_conversions.transformations.euler_from_quaternion(quaternion)
+    theta = euler[2]
+    return x, y, theta
 
 if __name__ == "__main__":
     import time
     rospy.init_node("hw1")
     pub_twist = rospy.Publisher("/twist", Twist, queue_size=1)
     pub_pose = rospy.Publisher("/pose", Pose, queue_size=1)
+    tfBuffer = tf2_ros.Buffer()
+    listener = tf2_ros.TransformListener(tfBuffer)
 
-    waypoint = np.array([[0.0,0.0,0.0], 
-                         [-1.0,0.0,0.0],
-                         [-1.0,1.0,np.pi/2.0],
-                         [-2.0,1.0,0.0],
-                         [-2.0,2.0,-np.pi/2.0],
-                         [-1.0,1.0,-np.pi/4.0],
-                         [0.0,0.0,0.0]]) 
+    waypoints = (
+        # robot pose                # tag id    # april tag pose
+        np.array([0.0, 0.0, 0.0]),    "marker_0", np.array([1.5, 0.0, 0.0]),
+        np.array([1.0, 0.0, 0.0]),    "marker_0", np.array([1.5, 0.0, 0.0]),
+        np.array([1.0, 2.0, np.pi]),  "marker_1", np.array([0.5, 2.0, np.pi]),
+        np.array([0.0, 0.0, 0.0]),    "marker_0", np.array([1.5, 0.0, 0.0]),
+    )
 
     # init pid controller
     pid = PIDcontroller(0.02,0.005,0.005)
@@ -127,8 +156,8 @@ if __name__ == "__main__":
     # in this loop we will go through each way point.
     # once error between the current state and the current way point is small enough, 
     # the current way point will be updated with a new point.
-    for wp in waypoint:
-        print("move to way point", wp)
+    for (wp, tag_id, tag_pose) in waypoints:
+        print("Move to waypoint {}".format(wp))
         # set wp as the target point
         pid.setTarget(wp)
 
@@ -137,11 +166,28 @@ if __name__ == "__main__":
         time.sleep(0.05)
         current_state += update_value
         pub_pose.publish(genPoseMsg(x=current_state[0], y=current_state[1], yaw=current_state[2]))
+
+        # Open loop traversal
         while(np.linalg.norm(pid.getError(current_state, wp)) > 0.05): # check the error between current state and current way point
             update_value = pid.update(current_state)
             pub_twist.publish(genTwistMsg(coord(update_value, current_state)))
             time.sleep(0.05)
             current_state += update_value
             pub_pose.publish(genPoseMsg(x=current_state[0], y=current_state[1], yaw=current_state[2]))
+        
+        # Closed loop error minimization
+        updated_pose = None
+        while updated_pose is None:
+            print("Looking for {}...".format(tag_id))
+            updated_pose = correct_pose(tfBuffer, tag_id, tag_pose)
+        while np.linalg.norm(pid.getError(updated_pose, wp)) > 0.05:
+            pub_pose.publish(genPoseMsg(x=updated_pose[0], y=updated_pose[1], yaw=updated_pose[2]))
+            current_state = updated_pose
+            update_value = pid.update(current_state)
+            pub_twist.publish(genTwistMsg(coord(update_value, current_state)))
+            time.sleep(0.05)
+            updated_pose = correct_pose(tfBuffer, tag_id, tag_pose)
+            
+
     # stop the car and exit
     pub_twist.publish(genTwistMsg(np.array([0.0,0.0,0.0])))
