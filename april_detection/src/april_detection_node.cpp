@@ -29,7 +29,7 @@ const cv::Mat d(cv::Size(1, 5), CV_64FC1, distortion_coeff);
 const cv::Mat K(cv::Size(3, 3), CV_64FC1, intrinsics);
 // TODO: Set tagSize for pose estimation, assuming same tag size.
 // details from: https://github.com/AprilRobotics/apriltag/wiki/AprilTag-User-Guide#pose-estimation
-const double tagSize = 0.162; // in meters
+const double tagSize = 0.073; // in meters
 
 cv::Mat rectify(const cv::Mat image){
   cv::Mat image_rect = image.clone();
@@ -58,8 +58,8 @@ void publishTransforms(vector<apriltag_pose_t> poses, vector<int> ids, std_msgs:
   for (int i=0; i<poses.size(); i++){
 
     // translation
-    tf.setOrigin(tf::Vector3(poses[i].t->data[0],
-                             poses[i].t->data[2],
+    tf.setOrigin(tf::Vector3(poses[i].t->data[2],
+                             -1.0 * poses[i].t->data[0],
                              -1.0 * poses[i].t->data[1]));
     // orientation - SO(3)
     so3_mat.setValue(poses[i].R->data[0], poses[i].R->data[1], poses[i].R->data[2],
@@ -69,8 +69,8 @@ void publishTransforms(vector<apriltag_pose_t> poses, vector<int> ids, std_msgs:
     double roll, pitch, yaw; 
 
     // orientation - q
-    so3_mat.getRPY(roll, yaw, pitch); // so3 to RPY
-    q.setRPY(roll, pitch, -yaw);
+    so3_mat.getRPY(pitch, yaw, roll); // so3 to RPY
+    q.setRPY(roll, -pitch, -yaw);
 
     tf.setRotation(q);
     string marker_name = "marker_" + to_string(ids[i]);
