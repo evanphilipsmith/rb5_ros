@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 import sys
 import rospy
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, Pose
 import numpy as np
+import tf_conversions
 
 """
 The class of the pid controller.
@@ -83,18 +84,30 @@ def genTwistMsg(desired_twist):
     twist_msg.angular.z = desired_twist[2]
     return twist_msg
 
+def genPoseMsg(x, y, yaw):
+    # type: (float, float, float) -> Pose
+    pose_msg = Pose()
+    pose_msg.position.x = x
+    pose_msg.position.y = y
+    q = tf_conversions.transformations.quaternion_from_euler(0, 0, yaw)
+    pose_msg.orientation.x = q[0]
+    pose_msg.orientation.y = q[1]
+    pose_msg.orientation.z = q[2]
+    pose_msg.orientation.w = q[3]
+    return pose_msg
+
 def coord(twist, current_state):
     J = np.array([[np.cos(current_state[2]), np.sin(current_state[2]), 0.0],
                   [-np.sin(current_state[2]), np.cos(current_state[2]), 0.0],
                   [0.0,0.0,1.0]])
     return np.dot(J, twist)
-    
 
 
 if __name__ == "__main__":
     import time
     rospy.init_node("hw1")
     pub_twist = rospy.Publisher("/twist", Twist, queue_size=1)
+    pub_pose = rospy.Publisher("/pose", Pose, queue_size=1)
 
     waypoint = np.array([[0.0,0.0,0.0], 
                          [-1.0,0.0,0.0],
@@ -109,6 +122,7 @@ if __name__ == "__main__":
 
     # init current state
     current_state = np.array([0.0,0.0,0.0])
+    pub_pose.publish(genPoseMsg(x=current_state[0], y=current_state[1], yaw=current_state[2]))
 
     # in this loop we will go through each way point.
     # once error between the current state and the current way point is small enough, 
@@ -118,23 +132,16 @@ if __name__ == "__main__":
         # set wp as the target point
         pid.setTarget(wp)
 
-        # calculate the current twist
         update_value = pid.update(current_state)
-        # publish the twist
         pub_twist.publish(genTwistMsg(coord(update_value, current_state)))
-        #print(coord(update_value, current_state))
         time.sleep(0.05)
-        # update the current state
         current_state += update_value
+        pub_pose.publish(genPoseMsg(x=current_state[0], y=current_state[1], yaw=current_state[2]))
         while(np.linalg.norm(pid.getError(current_state, wp)) > 0.05): # check the error between current state and current way point
-            # calculate the current twist
             update_value = pid.update(current_state)
-            # publish the twist
             pub_twist.publish(genTwistMsg(coord(update_value, current_state)))
-            #print(coord(update_value, current_state))
             time.sleep(0.05)
-            # update the current state
             current_state += update_value
+            pub_pose.publish(genPoseMsg(x=current_state[0], y=current_state[1], yaw=current_state[2]))
     # stop the car and exit
     pub_twist.publish(genTwistMsg(np.array([0.0,0.0,0.0])))
-
