@@ -1,9 +1,12 @@
 import numpy as np
+import matplotlib.pyplot as plt
 import math
 import time
+import csv
 from geometry_msgs.msg import Twist
 import rospy
 from april_detection.msg import AprilTagDetectionArray
+from open_loop import PIDcontroller, coord, genTwistMsg
 
 INITIAL_COVARIANCE = np.diag([0.005, 0.005, 0.001]) ** 2
 NUM_LANDMARK_PARAMS = 2
@@ -11,6 +14,44 @@ VALID_LANDMARK_IDS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 RANGE_UNCERTAINTY = 0.1  # meters
 BEARING_UNCERTAINTY = math.pi / 180 # radians
 SENSOR_NOISE = np.diag([RANGE_UNCERTAINTY, BEARING_UNCERTAINTY]) ** 2
+
+LANDMARK_SCALE_FACTOR = 8
+LANDMARKS = LANDMARK_SCALE_FACTOR * np.array([
+    [0.25, 0.0],
+    [0.75, 0.0],
+    [1.0, 0.25],
+    [1.0, 0.75],
+    [0.75, 1.0],
+    [0.25, 1.0],
+    [0.0, 0.75],
+    [0.0, 0.25],
+])
+
+SQUARE_SCALE_FACTOR = 4
+SQUARE_PATH = SQUARE_SCALE_FACTOR * np.array([
+    [0.0, 0.0, 0.0],
+    [1.0, 0.0, 0.0],
+    [1.0, 1.0, math.pi / 2],
+    [0.0, 1.0, math.pi],
+    [0.0, 0.0, -(math.pi / 2)],
+])
+SQUARE_TRANSLATE_FACTOR = np.array([2, 2])
+SQUARE_LANDMARKS = LANDMARKS - SQUARE_TRANSLATE_FACTOR
+
+OCTAGON_SCALE_FACTOR = 2
+OCTAGON_PATH = OCTAGON_SCALE_FACTOR * np.array([
+    [0.0, 0.0, 0.0],
+    [math.sqrt(2)/2, 1-math.sqrt(2)/2, math.pi / 8],
+    [1.0, 1.0, 3 * math.pi / 8],
+    [math.sqrt(2)/2, 1+math.sqrt(2)/2, 5 * math.pi / 8],
+    [0.0, 2.0, 7 * math.pi / 8],
+    [-math.sqrt(2)/2, 1+math.sqrt(2)/2, 9 * math.pi / 8],
+    [-1.0, 1.0, 11 * math.pi / 8],
+    [-math.sqrt(2)/2, 1-math.sqrt(2)/2, 13 * math.pi / 8],
+    [0.0, 0.0, 15 * math.pi / 8],
+])
+OCTAGON_TRANSLATE_FACTOR = np.array([4, 2])
+OCTAGON_LANDMARKS = LANDMARKS - OCTAGON_TRANSLATE_FACTOR
 
 class SLAMNode:
     def __init__(self) -> None:
@@ -167,11 +208,11 @@ class SLAMNode:
             self.landmark_id_lookup[landmark_id] = len(self.landmark_id_lookup)
         return sensor_observations, new_landmark_ids
 
-    def twist_callback(self, msg: Twist):
+    def twist_callback(self, msg):
         r_velocity = math.hypot(msg.linear.x, msg.linear.y)
         self.twist_history = np.append(self.twist_history, np.array([[r_velocity, msg.angular.z, time.time()]]))
 
-    def image_callback(self, msg: AprilTagDetectionArray):
+    def image_callback(self, msg):
         # Compute pose delta by integrating twist commands since the last image
         target_twist = np.where(
             np.logical_and(
@@ -210,11 +251,40 @@ class SLAMNode:
         landmark_ids = known_landmark_ids + new_landmark_ids
         self.predict(pose_delta)
         self.update(landmark_observations, landmark_ids)
+        # TODO: save state and covariance history
 
+def shutdown_callback():
+    print('shutting down...')
+    twist_pub.publish(genTwistMsg(np.array([0.0, 0.0, 0.0])))
+
+def plot_results(path: np.ndarray, landmarks: np.ndarray):
+    plt.plot(path[:, 0], path[:, 1])
+    plt.scatter(landmarks[:, 0], landmarks[:, 1])
+    plt.show()
 
 if __name__ == '__main__':
+    DATA_FILENAME = "square_path_state.csv"
+    waypoints = SQUARE_PATH
     slam_node = SLAMNode()
     rospy.init_node('slam_node')
-    rospy.subscriber('/twist', Twist, slam_node.twist_callback, queue_size=1)
-    rospy.subscriber('/apriltag_detection_array', AprilTagDetectionArray, slam_node.image_callback, queue_size=1)
-    rospy.spin()
+    rospy.on_shutdown(shutdown_callback)
+    rospy.Subscriber('/twist', Twist, slam_node.twist_callback, queue_size=1)
+    rospy.Subscriber('/apriltag_detection_array', AprilTagDetectionArray, slam_node.image_callback, queue_size=1)
+    twist_pub = rospy.Publisher("/twist", Twist, queue_size=1)
+    rate = rospy.Rate(10)  # 10 hz
+    pid_controller = PIDcontroller(0.02, 0.005, 0.005)
+    with open(DATA_FILENAME, 'w', newline='') as csv_file:
+        csv_writer = csv.writer(csv_file, delimiter=',')
+        for waypoint in waypoints:
+            print("Move to waypoint {}".format(waypoint))
+            pid_controller.setTarget(waypoint)
+            current_state = slam_node.state[:3]
+            while not rospy.is_shutdown() and np.linalg.norm(pid_controller.getError(current_state, waypoint)) > 0.05:
+                update_value = pid_controller.update(current_state)
+                twist_pub.publish(genTwistMsg(coord(update_value, current_state)))
+                rate.sleep()
+                current_state = slam_node.state[:3]
+                csv_writer.writerow(slam_node.state)
+            if rospy.is_shutdown():
+                break
+    twist_pub.publish(genTwistMsg(np.array([0.0, 0.0, 0.0])))
