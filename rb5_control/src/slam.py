@@ -15,7 +15,7 @@ RANGE_UNCERTAINTY = 0.1  # meters
 BEARING_UNCERTAINTY = math.pi / 180 # radians
 SENSOR_NOISE = np.diag([RANGE_UNCERTAINTY, BEARING_UNCERTAINTY]) ** 2
 
-LANDMARK_SCALE_FACTOR = 8
+LANDMARK_SCALE_FACTOR = 2.44  # meters (8 ft)
 LANDMARKS = LANDMARK_SCALE_FACTOR * np.array([
     [0.25, 0.0],
     [0.75, 0.0],
@@ -27,7 +27,7 @@ LANDMARKS = LANDMARK_SCALE_FACTOR * np.array([
     [0.0, 0.25],
 ])
 
-SQUARE_SCALE_FACTOR = 4
+SQUARE_SCALE_FACTOR = 1.22  # meters (4 ft)
 SQUARE_PATH = SQUARE_SCALE_FACTOR * np.array([
     [0.0, 0.0, 0.0],
     [1.0, 0.0, 0.0],
@@ -35,10 +35,10 @@ SQUARE_PATH = SQUARE_SCALE_FACTOR * np.array([
     [0.0, 1.0, math.pi],
     [0.0, 0.0, -(math.pi / 2)],
 ])
-SQUARE_TRANSLATE_FACTOR = np.array([2, 2])
+SQUARE_TRANSLATE_FACTOR = np.array([0.61, 0.61])  # meters ([2 ft, 2 ft])
 SQUARE_LANDMARKS = LANDMARKS - SQUARE_TRANSLATE_FACTOR
 
-OCTAGON_SCALE_FACTOR = 2
+OCTAGON_SCALE_FACTOR = 0.61  # meters (2 ft)
 OCTAGON_PATH = OCTAGON_SCALE_FACTOR * np.array([
     [0.0, 0.0, 0.0],
     [math.sqrt(2)/2, 1-math.sqrt(2)/2, math.pi / 8],
@@ -50,7 +50,7 @@ OCTAGON_PATH = OCTAGON_SCALE_FACTOR * np.array([
     [-math.sqrt(2)/2, 1-math.sqrt(2)/2, 13 * math.pi / 8],
     [0.0, 0.0, 15 * math.pi / 8],
 ])
-OCTAGON_TRANSLATE_FACTOR = np.array([4, 2])
+OCTAGON_TRANSLATE_FACTOR = np.array([1.22, 0.61])  # meters ([4 ft, 2 ft])
 OCTAGON_LANDMARKS = LANDMARKS - OCTAGON_TRANSLATE_FACTOR
 
 class SLAMNode:
