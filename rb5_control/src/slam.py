@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import numpy as np
 import matplotlib.pyplot as plt
 import math
@@ -54,7 +55,7 @@ OCTAGON_TRANSLATE_FACTOR = np.array([1.22, 0.61])  # meters ([4 ft, 2 ft])
 OCTAGON_LANDMARKS = LANDMARKS - OCTAGON_TRANSLATE_FACTOR
 
 class SLAMNode:
-    def __init__(self) -> None:
+    def __init__(self):
         self.state = np.array([0.0, 0.0, 0.0])
         self.landmark_id_lookup = {}
         self.covariance = INITIAL_COVARIANCE
@@ -62,7 +63,8 @@ class SLAMNode:
         self.last_image_timestamp = time.time()
 
     @staticmethod
-    def predict_vehicle_covariance(current_covariance: np.ndarray, current_state: np.ndarray, pose_delta: np.ndarray):
+    def predict_vehicle_covariance(current_covariance, current_state, pose_delta):
+        # type: (np.ndarray, np.ndarray, np.ndarray) -> np.ndarray
         LINEAR_UNCERTAINTY = 0.02  # meters
         ANGULAR_UNCERTAINTY = math.pi / 180 # radians
         NOISE = np.diag([LINEAR_UNCERTAINTY, ANGULAR_UNCERTAINTY]) ** 2
@@ -79,10 +81,11 @@ class SLAMNode:
             [np.sin(vehicle_orientation), 0],
             [0, 1]
         ])
-        return f_x @ current_covariance @ f_x.T + f_v @ NOISE @ f_v.T
+        return np.matmul(np.matmul(f_x, current_covariance), f_x.T) + np.matmul(np.matmul(f_v, NOISE), f_v.T)
 
     @staticmethod
-    def predict_vehicle_state(current_state: np.ndarray, pose_delta: np.ndarray):
+    def predict_vehicle_state(current_state, pose_delta):
+        # type: (np.ndarray, np.ndarray) -> np.ndarray
         linear_pose_delta, angular_pose_delta = pose_delta
         _, _, orientation = current_state
         predicted_state = current_state + np.array([
@@ -92,21 +95,21 @@ class SLAMNode:
         ])
         return predicted_state
 
-    def predict_state(self, vehicle_pose_delta: np.ndarray):
+    def predict_state(self, vehicle_pose_delta):
+        # type: (np.ndarray) -> None
         # Landmark state doesn't change since we assume landmarks are stationary.
         predicted_vehicle_state = self.predict_vehicle_state(self.state[:3], vehicle_pose_delta)
         self.state = np.concatenate((predicted_vehicle_state, self.state[3:]))
 
-    def predict_covariance(self, vehicle_pose_delta: np.ndarray):
+    def predict_covariance(self, vehicle_pose_delta):
+        # type: (np.ndarray) -> None
         # Landmark covariance doesn't change since we assume landmarks are stationary.
         vehicle_covariance = self.covariance[:3, :3]
         landmark_covariance = self.covariance[3:, 3:]
         # vehicle_landmark_correlation = self.covariance[:3, 3:]
 
         predicted_vehicle_covariance = self.predict_vehicle_covariance(vehicle_covariance, self.state[:3], vehicle_pose_delta)
-        predicted_vehicle_landmark_correlation = (
-            self.state[:3].reshape(-1, 1)
-            @ self.state[3:].reshape(1, -1))
+        predicted_vehicle_landmark_correlation = np.matmul(self.state[:3].reshape(-1, 1), self.state[3:].reshape(1, -1))
         self.covariance = np.concatenate((
             np.concatenate(
                 (predicted_vehicle_covariance, predicted_vehicle_landmark_correlation),
@@ -116,12 +119,15 @@ class SLAMNode:
                 axis=1)),
         axis=0)
 
-    def predict(self, pose_delta: np.ndarray):
+    def predict(self, pose_delta):
+        # type: (np.ndarray) -> None
         self.predict_state(pose_delta)
         self.predict_covariance(pose_delta)
 
-    def update(self, sensor_observations: np.ndarray, landmark_ids: list):
-        def landmark_idx_to_state_idx(i: int) -> int:
+    def update(self, sensor_observations, landmark_ids):
+        # type: (np.ndarray, list) -> None
+        def landmark_idx_to_state_idx(i):
+            # type: (int) -> int
             return (i * NUM_LANDMARK_PARAMS) + 3
         sensor_observations = sensor_observations.reshape(-1, 2)
         for x, observation in zip(landmark_ids, sensor_observations):
@@ -148,12 +154,17 @@ class SLAMNode:
                 np.zeros((2, state_idx-3)),
                 h_p,
                 np.zeros((2, self.state.size-(state_idx+NUM_LANDMARK_PARAMS)))), axis=1)
-            s = h_x @ self.covariance @ h_x.T + SENSOR_NOISE
-            kalman_gain = self.covariance @ h_x.T @ np.linalg.inv(s)
-            self.state = self.state + (kalman_gain @ innovation)
-            self.covariance = self.covariance - (kalman_gain @ h_x @ self.covariance)
+            s = np.matmul(np.matmul(h_x, self.covariance), h_x.T) + SENSOR_NOISE
+            try:
+                kalman_gain = np.matmul(np.matmul(self.covariance, h_x.T), np.linalg.inv(s))
+            except np.linalg.LinAlgError as e:
+                print("Encountered LinAlgError: {}.\tSkipping update...".format(e))
+                return
+            self.state = self.state + np.matmul(kalman_gain, innovation)
+            self.covariance = self.covariance - np.matmul(np.matmul(kalman_gain, h_x), self.covariance)
 
-    def extend_covariance(self, sensor_observation: np.ndarray):
+    def extend_covariance(self, sensor_observation):
+        # type: (np.ndarray) -> None
         n = self.covariance.shape[0]
         vehicle_orientation = self.state[2]
         r, b = sensor_observation
@@ -176,9 +187,10 @@ class SLAMNode:
             np.concatenate((self.covariance, np.zeros((n, NUM_LANDMARK_PARAMS))), axis=1),
             np.concatenate((np.zeros((NUM_LANDMARK_PARAMS, n)), SENSOR_NOISE), axis=1)),
             axis=0)
-        self.covariance = insertion_jacobian @ template @ insertion_jacobian.T
+        self.covariance = np.matmul(np.matmul(insertion_jacobian, template), insertion_jacobian.T)
 
-    def extend_state(self, sensor_observations: np.ndarray):
+    def extend_state(self, sensor_observations):
+        # type: (np.ndarray) -> None
         if sensor_observations.size == 0:
             return
         assert sensor_observations.size % NUM_LANDMARK_PARAMS == 0
@@ -197,7 +209,8 @@ class SLAMNode:
             sensor_observations.reshape(num_new_observations, NUM_LANDMARK_PARAMS))
         self.state = np.concatenate((self.state, observations_tf.flatten()))
 
-    def extend(self, sensor_observations: np.ndarray, new_landmark_ids: list):
+    def extend(self, sensor_observations, new_landmark_ids):
+        # type: (np.ndarray, list) -> None
         # Remove landmarks that aren't in the set of supported landmarks
         valid_landmark_indices = [i for i, x in enumerate(new_landmark_ids) if x in VALID_LANDMARK_IDS]
         new_landmark_ids = [x for x in new_landmark_ids if x in VALID_LANDMARK_IDS]
@@ -210,7 +223,7 @@ class SLAMNode:
 
     def twist_callback(self, msg):
         r_velocity = math.hypot(msg.linear.x, msg.linear.y)
-        self.twist_history = np.append(self.twist_history, np.array([[r_velocity, msg.angular.z, time.time()]]))
+        self.twist_history = np.append(self.twist_history, np.array([[r_velocity, msg.angular.z, time.time()]]), axis=0)
 
     def image_callback(self, msg):
         # Compute pose delta by integrating twist commands since the last image
@@ -220,8 +233,8 @@ class SLAMNode:
                 self.twist_history[:, 2] <= time.time()))
         self.last_image_timestamp = time.time()
         pose_delta = np.array([
-            np.trapz(target_twist[:, 0], target_twist[:, 2]),  # range
-            np.trapz(target_twist[:, 1], target_twist[:, 2]),  # bearing
+            np.trapz(self.twist_history[target_twist][:, 0], self.twist_history[target_twist][:, 2]),  # range
+            np.trapz(self.twist_history[target_twist][:, 1], self.twist_history[target_twist][:, 2]),  # bearing
         ])
         known_landmark_observations = []
         known_landmark_ids = []
@@ -234,6 +247,8 @@ class SLAMNode:
             else:
                 unknown_landmark_ids.append(tag.id)
                 unknown_landmark_observations.append([tag.pose.position.x, tag.pose.position.y])
+        known_landmark_observations = np.array(known_landmark_observations).reshape(-1, 2)
+        unknown_landmark_observations = np.array(unknown_landmark_observations).reshape(-1, 2)
         # Convert landmark x,y coords to range and bearing
         known_delta = known_landmark_observations - self.state[:2]
         known_landmark_observations = np.concatenate((
@@ -244,7 +259,7 @@ class SLAMNode:
         unknown_landmark_observations = np.concatenate((
             np.hypot(unknown_landmark_observations[:, 0], unknown_landmark_observations[:, 1]).reshape(-1, 1),
             np.arctan2(unknown_delta[:, 0], unknown_delta[:, 1]).reshape(-1, 1)
-        ))
+        ), axis=1)
 
         new_landmark_observations, new_landmark_ids = self.extend(unknown_landmark_observations, unknown_landmark_ids)
         landmark_observations = np.concatenate((known_landmark_observations, new_landmark_observations), axis=0)
@@ -257,14 +272,15 @@ def shutdown_callback():
     print('shutting down...')
     twist_pub.publish(genTwistMsg(np.array([0.0, 0.0, 0.0])))
 
-def plot_results(path: np.ndarray, landmarks: np.ndarray):
+def plot_results(path, landmarks):
+    # type: (np.ndarray, np.ndarray) -> None
     plt.plot(path[:, 0], path[:, 1])
     plt.scatter(landmarks[:, 0], landmarks[:, 1])
     plt.show()
 
 if __name__ == '__main__':
-    DATA_FILENAME = "square_path_state.csv"
-    waypoints = SQUARE_PATH
+    DATA_FILENAME = "octagon_path_state.csv"
+    waypoints = OCTAGON_PATH
     slam_node = SLAMNode()
     rospy.init_node('slam_node')
     rospy.on_shutdown(shutdown_callback)
@@ -273,7 +289,7 @@ if __name__ == '__main__':
     twist_pub = rospy.Publisher("/twist", Twist, queue_size=1)
     rate = rospy.Rate(10)  # 10 hz
     pid_controller = PIDcontroller(0.02, 0.005, 0.005)
-    with open(DATA_FILENAME, 'w', newline='') as csv_file:
+    with open(DATA_FILENAME, 'wb') as csv_file:
         csv_writer = csv.writer(csv_file, delimiter=',')
         for waypoint in waypoints:
             print("Move to waypoint {}".format(waypoint))
